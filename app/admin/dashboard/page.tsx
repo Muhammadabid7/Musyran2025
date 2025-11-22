@@ -16,6 +16,7 @@ import {
   setDoc,
   getDoc,
   serverTimestamp,
+  onSnapshot,
 } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -140,6 +141,16 @@ export default function AdminDashboard() {
     fetchLandingContent()
     fetchJabatanFormatur()
     fetchLandingStatus()
+
+    const unsubLandingViews = onSnapshot(doc(db, "LandingPage", "LandingViews"), (snap) => {
+      if (snap.exists()) {
+        setViewStats(snap.data() as any)
+      }
+    })
+
+    return () => {
+      unsubLandingViews()
+    }
   }, [])
 
   const fetchPanitia = async () => {
@@ -411,7 +422,7 @@ export default function AdminDashboard() {
         },
         { merge: true },
       )
-      setNewBilik({ id: "", name: "" })
+      setNewBilik({ id: "", name: "", monitor: "", email: "", handphone: "" })
       fetchBilik()
       alert("Bilik berhasil ditambahkan/diperbarui")
     } catch (error) {
@@ -856,10 +867,9 @@ export default function AdminDashboard() {
               </CardContent>
             </Card>
 
-            {/* List Panitia + Bilik */}
-            <Card className="md:col-span-2 space-y-4">
+            <Card className="md:col-span-2 space-y-6">
               <CardHeader>
-                <CardTitle>Daftar Panitia & Bilik</CardTitle>
+                <CardTitle>Daftar Panitia Aktif</CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="rounded-md border">
@@ -936,7 +946,6 @@ export default function AdminDashboard() {
                         placeholder="01"
                         value={newBilik.id}
                         onChange={(e) => setNewBilik({ ...newBilik, id: e.target.value })}
-                        className="w-full"
                       />
                     </div>
                     <div className="space-y-1">
@@ -945,7 +954,6 @@ export default function AdminDashboard() {
                         placeholder="Bilik 01"
                         value={newBilik.name}
                         onChange={(e) => setNewBilik({ ...newBilik, name: e.target.value })}
-                        className="w-full"
                       />
                     </div>
                     <div className="space-y-1">
@@ -954,7 +962,6 @@ export default function AdminDashboard() {
                         placeholder="monitor01"
                         value={newBilik.monitor}
                         onChange={(e) => setNewBilik({ ...newBilik, monitor: e.target.value })}
-                        className="w-full"
                       />
                     </div>
                     <div className="space-y-1">
@@ -963,7 +970,6 @@ export default function AdminDashboard() {
                         placeholder="panitia01@gmail.com"
                         value={newBilik.email}
                         onChange={(e) => setNewBilik({ ...newBilik, email: e.target.value })}
-                        className="w-full"
                       />
                     </div>
                     <div className="space-y-1">
@@ -972,7 +978,6 @@ export default function AdminDashboard() {
                         placeholder="HpPanitia01"
                         value={newBilik.handphone}
                         onChange={(e) => setNewBilik({ ...newBilik, handphone: e.target.value })}
-                        className="w-full"
                       />
                     </div>
                     <div className="flex items-end">
@@ -981,6 +986,7 @@ export default function AdminDashboard() {
                       </Button>
                     </div>
                   </div>
+
                   <div className="rounded-md border">
                     <Table>
                       <TableHeader>
@@ -1670,7 +1676,7 @@ export default function AdminDashboard() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Card>
               <CardHeader>
-                <CardTitle>Struktur Inti (Formatur)</CardTitle>
+                <CardTitle>Struktur Inti (Halaman Kandidat Formatur)</CardTitle>
                 <CardDescription>Judul, subjudul, dan gaya teks</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
