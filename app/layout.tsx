@@ -33,7 +33,7 @@ export default function RootLayout({
               />
             </div>
             <div>
-              <h1 className="text-lg md:text-xl font-bold text-green-700 leading-tight">SMK Muhammadiyah 1</h1>
+              <h1 className="text-lg md:text-xl font-bold text-green-700 leading-tight">PR IPM SMK Muhammadiyah 1</h1>
               <p className="text-sm text-gray-600 font-medium">Sangatta Utara</p>
             </div>
           </div>
