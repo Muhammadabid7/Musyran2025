@@ -19,8 +19,8 @@ const ROLE_OPTIONS = [
   { key: "ketuaUmum", label: "Ketua Umum" },
   { key: "sekretarisUmum", label: "Sekretaris Umum" },
   { key: "bendaharaUmum", label: "Bendahara Umum" },
-  { key: "ketuaOrganisasi", label: "Ketua Bidang Organisasi" },
-  { key: "ketuaPerkaderan", label: "Ketua Bidang Perkaderan" },
+  { key: "ketuaOrganisasi", label: "Ketua Bidang Perkaderan" },
+  { key: "ketuaPerkaderan", label: "Ketua Bidang PIP" },
   { key: "ketuaKDI", label: "Ketua Bidang KDI" },
   { key: "ketuaASBO", label: "Ketua Bidang ASBO" },
 ]
