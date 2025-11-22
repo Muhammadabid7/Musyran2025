@@ -55,7 +55,7 @@ export default function EmergencyPage() {
       }
 
       await updateDoc(doc(db, "Data_Calon_Formatur", selectedCandidate), {
-        VoteCount: increment(1),
+        JumlahVote: increment(1),
       })
 
       await updateDoc(studentDoc.ref, { StatusVoting: "sudah" })

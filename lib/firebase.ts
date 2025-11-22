@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app"
-import { getFirestore } from "firebase/firestore"
+import { getFirestore, initializeFirestore } from "firebase/firestore"
 import { getAuth } from "firebase/auth"
 
 const firebaseConfig = {
@@ -14,7 +14,13 @@ const firebaseConfig = {
 
 // Initialize Firebase (singleton pattern)
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp()
-const db = getFirestore(app)
+// Use long polling to better handle restricted networks (e.g., dev env without full Internet access).
+let db
+try {
+  db = initializeFirestore(app, { experimentalForceLongPolling: true, useFetchStreams: false })
+} catch (error) {
+  db = getFirestore(app)
+}
 const auth = getAuth(app)
 
 export { app, db, auth }

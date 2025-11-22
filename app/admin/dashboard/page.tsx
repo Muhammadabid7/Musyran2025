@@ -26,7 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Pencil, Trash2, Download, Plus, FileSpreadsheet, Eye, Globe, UserPlus } from "lucide-react"
+import { Pencil, Trash2, Download, Plus, FileSpreadsheet, Eye, Globe, UserPlus, Menu } from "lucide-react"
 import QRCode from "qrcode"
 
 const JURUSAN_OPTIONS = ["RPL", "TKJ", "TKR INDUSTRI", "TKR REGULER", "TAB INDUSTRI", "TAB REGULER", "TITL"]
@@ -50,6 +50,7 @@ export default function AdminDashboard() {
   const [panitiaList, setPanitiaList] = useState<any[]>([])
   const [siswaList, setSiswaList] = useState<any[]>([])
   const [candidateList, setCandidateList] = useState<any[]>([])
+  const [bilikList, setBilikList] = useState<any[]>([])
   const [candidateForm, setCandidateForm] = useState({ id: "", name: "", photo: "" })
   const [editingCandidate, setEditingCandidate] = useState<any>(null)
   const [viewQrSiswa, setViewQrSiswa] = useState<any>(null)
@@ -59,6 +60,16 @@ export default function AdminDashboard() {
   const [newPassword, setNewPassword] = useState("")
   const [editingPanitia, setEditingPanitia] = useState<any>(null)
   const [newSiswa, setNewSiswa] = useState({ Nama: "", Kelas: "", Jurusan: "", NIS: "" })
+  const [newBilik, setNewBilik] = useState({ id: "", name: "", monitor: "", email: "", handphone: "" })
+  const [selectedSiswaIds, setSelectedSiswaIds] = useState<string[]>([])
+  const [siswaSearch, setSiswaSearch] = useState("")
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean
+    title: string
+    description?: string
+    onConfirm?: () => void | Promise<void>
+  }>({ open: false, title: "" })
+  const [confirmLoading, setConfirmLoading] = useState(false)
   const [landingContent, setLandingContent] = useState({
     winnerTitle: "Struktur Inti",
     winnerSubtitle: "Terima kasih atas partisipasi Anda",
@@ -77,6 +88,13 @@ export default function AdminDashboard() {
     candidateSubtitle: "Calon Kandidat Formatur",
     candidateSubtitleColor: "#6b7280",
     candidateSubtitleSize: "0.9",
+    candidateBadgePrefix: "Calon",
+    candidateBadgeBgColor: "#16a34a",
+    candidateBadgeTextColor: "#ffffff",
+    candidateBadgeFontSize: "1.1",
+    candidateBadgeShape: "rounded",
+    candidateBadgeTextTransform: "none",
+    candidateBadgeShadow: true,
     chartTitle: "Perolehan Suara Sementara",
     chartTitleColor: "#1f2937",
     chartTitleSize: "1.5",
@@ -98,10 +116,17 @@ export default function AdminDashboard() {
   const [roleLabels, setRoleLabels] = useState<Record<string, string>>(
     ROLE_OPTIONS.reduce((acc, curr) => ({ ...acc, [curr.key]: curr.label }), {}),
   )
+  const [showFullHistory, setShowFullHistory] = useState(false)
+  const [prevLandingContent, setPrevLandingContent] = useState(landingContent)
+  const [prevLandingStatus, setPrevLandingStatus] = useState(landingStatus)
+  const [prevRolesMap, setPrevRolesMap] = useState(rolesMap)
+  const [prevRoleLabels, setPrevRoleLabels] = useState(roleLabels)
   const [viewStats, setViewStats] = useState<{ Jumlah: number; lastView?: any }>({ Jumlah: 0 })
   const [editHistory, setEditHistory] = useState<{ akun?: string; ApaYangDiEdit?: string; timestamp?: any }>({})
   const [adminEmail, setAdminEmail] = useState("admin")
   const [savingLanding, setSavingLanding] = useState(false)
+  const [activeTab, setActiveTab] = useState("panitia")
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -111,6 +136,7 @@ export default function AdminDashboard() {
     fetchPanitia()
     fetchSiswa()
     fetchCandidates()
+    fetchBilik()
     fetchLandingContent()
     fetchJabatanFormatur()
     fetchLandingStatus()
@@ -127,6 +153,48 @@ export default function AdminDashboard() {
     setPanitiaList(list)
   }
 
+  const syncVotingTotals = async (list: any[]) => {
+    const counts = list.reduce(
+      (acc, curr) => {
+        const status = (curr.StatusVoting || "").toLowerCase()
+        if (status === "sudah") acc.sudah += 1
+        else acc.belum += 1
+        return acc
+      },
+      { sudah: 0, belum: 0 },
+    )
+
+    try {
+      await Promise.all([
+        setDoc(doc(db, "TotalSudahVoting", "Total"), { TotalSudahVoting: counts.sudah }, { merge: true }),
+        setDoc(doc(db, "TotalBelumVoting", "Total"), { TotalBelumVoting: counts.belum }, { merge: true }),
+      ])
+    } catch (error) {
+      console.error("Failed to sync voting totals", error)
+    }
+  }
+
+  const openConfirm = (payload: { title: string; description?: string; onConfirm?: () => void | Promise<void> }) => {
+    setConfirmState({ open: true, ...payload })
+  }
+
+  const closeConfirm = () => {
+    setConfirmState((prev) => ({ ...prev, open: false }))
+    setConfirmLoading(false)
+  }
+
+  const handleConfirmAction = async () => {
+    if (!confirmState.onConfirm) return closeConfirm()
+    try {
+      setConfirmLoading(true)
+      await confirmState.onConfirm()
+    } catch (error) {
+      console.error(error)
+    } finally {
+      closeConfirm()
+    }
+  }
+
   const fetchSiswa = async () => {
     const snapshot = await getDocs(collection(db, "Data_Siswa"))
     const list: any[] = []
@@ -134,6 +202,18 @@ export default function AdminDashboard() {
       list.push({ id: doc.id, ...doc.data() })
     })
     setSiswaList(list)
+    setSelectedSiswaIds((prev) => prev.filter((id) => list.some((s) => s.id === id)))
+    await syncVotingTotals(list)
+  }
+
+  const fetchBilik = async () => {
+    const snapshot = await getDocs(collection(db, "BilikVoting"))
+    const list: any[] = []
+    snapshot.forEach((doc) => {
+      list.push({ id: doc.id, ...doc.data() })
+    })
+    list.sort((a, b) => String(a.id).localeCompare(String(b.id)))
+    setBilikList(list)
   }
 
   const fetchCandidates = async () => {
@@ -167,10 +247,11 @@ export default function AdminDashboard() {
     const snap = await getDoc(doc(db, "LandingContent", "main"))
     if (snap.exists()) {
       const data = snap.data()
-      setLandingContent((prev) => ({
-        ...prev,
-        ...data,
-      }))
+      setLandingContent((prev) => {
+        const merged = { ...prev, ...data }
+        setPrevLandingContent(merged)
+        return merged
+      })
     }
   }
 
@@ -180,25 +261,71 @@ export default function AdminDashboard() {
     const viewsSnap = await getDoc(doc(db, "LandingPage", "LandingViews"))
     const editSnap = await getDoc(doc(db, "LandingPage", "LandingEditHistory"))
 
-    setLandingStatus({
+    const nextStatus = {
       utama: utamaSnap.exists() ? utamaSnap.data()?.Status !== "false" : true,
       winner: winnerSnap.exists() ? winnerSnap.data()?.Status === "true" : false,
-    })
+    }
+    setLandingStatus(nextStatus)
+    setPrevLandingStatus(nextStatus)
 
     const rolesData = winnerSnap.exists() ? winnerSnap.data()?.Roles : null
     const labelsData = winnerSnap.exists() ? winnerSnap.data()?.RoleLabels : null
+    let updatedRoles = { ...rolesMap }
+    let updatedLabels = { ...roleLabels }
     if (rolesData) {
-      setRolesMap((prev) => ({ ...prev, ...rolesData }))
+      updatedRoles = { ...updatedRoles, ...rolesData }
+      setRolesMap(updatedRoles)
     }
     if (labelsData) {
-      setRoleLabels((prev) => ({ ...prev, ...labelsData }))
+      updatedLabels = { ...updatedLabels, ...labelsData }
+      setRoleLabels(updatedLabels)
     }
+    setPrevRolesMap(updatedRoles)
+    setPrevRoleLabels(updatedLabels)
     if (viewsSnap.exists()) {
       setViewStats(viewsSnap.data() as any)
     }
     if (editSnap.exists()) {
       setEditHistory(editSnap.data() as any)
+      setShowFullHistory(false)
     }
+  }
+
+  const collectLandingChanges = () => {
+    const changes: string[] = []
+    const formatVal = (v: any) => (v === undefined || v === null || v === "" ? "-" : String(v))
+    const formatBool = (v: boolean) => (v ? "ON" : "OFF")
+
+    if (landingStatus.utama !== prevLandingStatus.utama) {
+      changes.push(`Landing utama: ${formatBool(landingStatus.utama)} (sebelumnya ${formatBool(prevLandingStatus.utama)})`)
+    }
+    if (landingStatus.winner !== prevLandingStatus.winner) {
+      changes.push(`Formatur terpilih: ${formatBool(landingStatus.winner)} (sebelumnya ${formatBool(prevLandingStatus.winner)})`)
+    }
+
+    ROLE_OPTIONS.forEach((role) => {
+      const prevRole = prevRolesMap[role.key] || ""
+      const currRole = rolesMap[role.key] || ""
+      if (prevRole !== currRole) {
+        const label = roleLabels[role.key] || role.label
+        changes.push(`Role ${label}: ${formatVal(prevRole)} -> ${formatVal(currRole)}`)
+      }
+      const prevLabel = prevRoleLabels[role.key] || role.label
+      const currLabel = roleLabels[role.key] || role.label
+      if (prevLabel !== currLabel) {
+        changes.push(`Label ${role.label}: ${formatVal(prevLabel)} -> ${formatVal(currLabel)}`)
+      }
+    })
+
+    Object.keys(landingContent).forEach((key) => {
+      const prevVal = (prevLandingContent as any)?.[key]
+      const currVal = (landingContent as any)?.[key]
+      if (prevVal !== currVal) {
+        changes.push(`Konten ${key}: ${formatVal(prevVal)} -> ${formatVal(currVal)}`)
+      }
+    })
+
+    return changes
   }
 
   const fetchJabatanFormatur = async () => {
@@ -209,7 +336,11 @@ export default function AdminDashboard() {
       if (key) incoming[key] = d.id
     })
     if (Object.keys(incoming).length) {
-      setRolesMap((prev) => ({ ...prev, ...incoming }))
+      setRolesMap((prev) => {
+        const merged = { ...prev, ...incoming }
+        setPrevRolesMap(merged)
+        return merged
+      })
     }
   }
 
@@ -245,14 +376,59 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleDeletePanitia = async (id: string) => {
-    if (!confirm("Yakin hapus panitia ini?")) return
-    try {
-      await deleteDoc(doc(db, "Data_Admin", id))
-      fetchPanitia()
-    } catch (e) {
-      alert("Gagal hapus data")
+  const handleDeletePanitia = (id: string) => {
+    openConfirm({
+      title: "Hapus Panitia?",
+      description: "Aksi ini akan menghapus akun panitia secara permanen.",
+      onConfirm: async () => {
+        await deleteDoc(doc(db, "Data_Admin", id))
+        fetchPanitia()
+      },
+    })
+  }
+
+  const handleAddBilik = async () => {
+    const rawId = newBilik.id.trim()
+    if (!rawId) {
+      alert("ID bilik wajib diisi")
+      return
     }
+    const bilikId = rawId.padStart(2, "0")
+    try {
+      await setDoc(
+        doc(db, "BilikVoting", bilikId),
+        {
+          name: newBilik.name || `Bilik ${bilikId}`,
+          status: "idle",
+          activeVoterName: "",
+          activeVoterNIS: 0,
+          heartbeat: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          timestamp: serverTimestamp(),
+          Monitor: newBilik.monitor || `monitor${bilikId}`,
+          Email: newBilik.email || "",
+          Handphone: newBilik.handphone || "",
+        },
+        { merge: true },
+      )
+      setNewBilik({ id: "", name: "" })
+      fetchBilik()
+      alert("Bilik berhasil ditambahkan/diperbarui")
+    } catch (error) {
+      alert("Gagal menyimpan bilik")
+      console.error(error)
+    }
+  }
+
+  const handleDeleteBilik = (id: string) => {
+    openConfirm({
+      title: "Hapus Bilik?",
+      description: "Bilik akan dihapus dari daftar monitor.",
+      onConfirm: async () => {
+        await deleteDoc(doc(db, "BilikVoting", id))
+        fetchBilik()
+      },
+    })
   }
 
   // --- Siswa Logic ---
@@ -291,14 +467,43 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleDeleteSiswa = async (id: string) => {
-    if (!confirm("Yakin hapus data siswa ini?")) return
-    try {
-      await deleteDoc(doc(db, "Data_Siswa", id))
-      fetchSiswa()
-    } catch (e) {
-      alert("Gagal hapus data siswa")
+  const handleDeleteSiswa = (id: string) => {
+    openConfirm({
+      title: "Hapus Siswa?",
+      description: "Data siswa akan dihapus dari daftar dan tidak bisa di-undo.",
+      onConfirm: async () => {
+        await deleteDoc(doc(db, "Data_Siswa", id))
+        fetchSiswa()
+        setSelectedSiswaIds((prev) => prev.filter((sid) => sid !== id))
+      },
+    })
+  }
+
+  const handleToggleSelectSiswa = (id: string) => {
+    setSelectedSiswaIds((prev) => (prev.includes(id) ? prev.filter((sid) => sid !== id) : [...prev, id]))
+  }
+
+  const handleToggleSelectAllSiswa = () => {
+    if (selectedSiswaIds.length === siswaList.length) {
+      setSelectedSiswaIds([])
+    } else {
+      setSelectedSiswaIds(siswaList.map((s) => s.id))
     }
+  }
+
+  const handleBulkDeleteSiswa = () => {
+    if (!selectedSiswaIds.length) return
+    openConfirm({
+      title: "Hapus Siswa Terpilih?",
+      description: `Anda akan menghapus ${selectedSiswaIds.length} siswa sekaligus.`,
+      onConfirm: async () => {
+        const batch = writeBatch(db)
+        selectedSiswaIds.forEach((sid) => batch.delete(doc(db, "Data_Siswa", sid)))
+        await batch.commit()
+        setSelectedSiswaIds([])
+        fetchSiswa()
+      },
+    })
   }
 
   // --- Calon Formatur Logic ---
@@ -343,14 +548,15 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleDeleteCandidate = async (id: string) => {
-    if (!confirm("Hapus calon ini?")) return
-    try {
-      await deleteDoc(doc(db, "Data_Calon_Formatur", id))
-      fetchCandidates()
-    } catch (error) {
-      alert("Gagal hapus calon")
-    }
+  const handleDeleteCandidate = (id: string) => {
+    openConfirm({
+      title: "Hapus Calon?",
+      description: "Data calon formatur akan dihapus permanen.",
+      onConfirm: async () => {
+        await deleteDoc(doc(db, "Data_Calon_Formatur", id))
+        fetchCandidates()
+      },
+    })
   }
 
   // --- Landing Page Content ---
@@ -360,6 +566,7 @@ export default function AdminDashboard() {
     try {
       await setDoc(doc(db, "LandingContent", "main"), landingContent, { merge: true })
       alert("Konten landing page diperbarui")
+      setPrevLandingContent(landingContent)
     } catch (error) {
       alert("Gagal menyimpan konten landing")
     } finally {
@@ -386,6 +593,9 @@ export default function AdminDashboard() {
       })
       await batch.commit()
       alert("Status landing & formatur terpilih tersimpan")
+      setPrevLandingStatus(landingStatus)
+      setPrevRolesMap(rolesMap)
+      setPrevRoleLabels(roleLabels)
     } catch (error) {
       alert("Gagal menyimpan status")
     } finally {
@@ -415,14 +625,8 @@ export default function AdminDashboard() {
 
       await setDoc(doc(db, "LandingContent", "main"), { ...landingContent }, { merge: true })
 
-      const apaYangDiEdit = [
-        landingStatus.utama ? "Landing utama: ON" : "Landing utama: OFF",
-        landingStatus.winner ? "Formatur terpilih: ON" : "Formatur terpilih: OFF",
-        `Roles: ${Object.values(rolesMap)
-          .filter(Boolean)
-          .join(", ")}`,
-        "Konten teks/warna/ukuran diperbarui",
-      ].join(" | ")
+      const changes = collectLandingChanges()
+      const apaYangDiEdit = changes.length ? changes.join(" | ") : "Tidak ada perubahan"
 
       await setDoc(
         doc(db, "LandingPage", "LandingEditHistory"),
@@ -435,6 +639,10 @@ export default function AdminDashboard() {
       )
 
       alert("Status, formatur terpilih, dan konten landing tersimpan + dicatat")
+      setPrevLandingStatus(landingStatus)
+      setPrevRolesMap(rolesMap)
+      setPrevRoleLabels(roleLabels)
+      setPrevLandingContent(landingContent)
     } catch (error) {
       alert("Gagal menyimpan status/konten landing")
     } finally {
@@ -523,19 +731,58 @@ export default function AdminDashboard() {
     }
   }
 
+  const historyText = editHistory.ApaYangDiEdit || "Belum ada catatan"
+  const isLongHistory = historyText.length > 160
+  const displayHistory = isLongHistory && !showFullHistory ? `${historyText.slice(0, 160)}...` : historyText
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-800">Admin Dashboard</h1>
       </div>
 
-      <Tabs defaultValue="panitia" className="w-full">
-        <TabsList className="grid w-full grid-cols-4 mb-8">
-          <TabsTrigger value="panitia">Manajemen Panitia</TabsTrigger>
-          <TabsTrigger value="siswa">Manajemen Siswa</TabsTrigger>
-          <TabsTrigger value="calon">Calon Formatur</TabsTrigger>
-          <TabsTrigger value="landing">Landing Page</TabsTrigger>
-        </TabsList>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="sm:hidden flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setMobileMenuOpen((prev) => !prev)}
+              aria-label="Buka menu"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+            <span className="text-sm font-medium text-gray-700">Menu</span>
+          </div>
+          <TabsList className="hidden sm:grid w-full grid-cols-4">
+            <TabsTrigger value="panitia">Manajemen Panitia</TabsTrigger>
+            <TabsTrigger value="siswa">Manajemen Siswa</TabsTrigger>
+            <TabsTrigger value="calon">Calon Formatur</TabsTrigger>
+            <TabsTrigger value="landing">Landing Page</TabsTrigger>
+          </TabsList>
+        </div>
+        {mobileMenuOpen && (
+          <div className="sm:hidden grid grid-cols-2 gap-2 mb-6">
+            {[
+              { value: "panitia", label: "Manajemen Panitia" },
+              { value: "siswa", label: "Manajemen Siswa" },
+              { value: "calon", label: "Calon Formatur" },
+              { value: "landing", label: "Landing Page" },
+            ].map((item) => (
+              <Button
+                key={item.value}
+                variant={activeTab === item.value ? "default" : "outline"}
+                onClick={() => {
+                  setActiveTab(item.value)
+                  setMobileMenuOpen(false)
+                }}
+                className="justify-start"
+              >
+                {item.label}
+              </Button>
+            ))}
+          </div>
+        )}
 
         {/* --- TAB PANITIA --- */}
         <TabsContent value="panitia" className="space-y-6">
@@ -565,7 +812,12 @@ export default function AdminDashboard() {
               </CardHeader>
               <CardContent className="space-y-1 text-sm">
                 <div className="font-semibold text-gray-800">Akun: {editHistory.akun || "-"}</div>
-                <div className="text-gray-700">{editHistory.ApaYangDiEdit || "Belum ada catatan"}</div>
+                <div className="text-gray-700">{displayHistory}</div>
+                {isLongHistory && (
+                  <Button variant="ghost" size="sm" className="px-0 text-green-700" onClick={() => setShowFullHistory((p) => !p)}>
+                    {showFullHistory ? "See less" : "See more"}
+                  </Button>
+                )}
                 <div className="text-xs text-gray-500">
                   {editHistory.timestamp
                     ? new Date(
@@ -604,12 +856,12 @@ export default function AdminDashboard() {
               </CardContent>
             </Card>
 
-            {/* List Panitia */}
-            <Card className="md:col-span-2">
+            {/* List Panitia + Bilik */}
+            <Card className="md:col-span-2 space-y-4">
               <CardHeader>
-                <CardTitle>Daftar Panitia Aktif</CardTitle>
+                <CardTitle>Daftar Panitia & Bilik</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-6">
                 <div className="rounded-md border">
                   <Table>
                     <TableHeader>
@@ -670,6 +922,98 @@ export default function AdminDashboard() {
                       ))}
                     </TableBody>
                   </Table>
+                </div>
+
+                <div className="rounded-md border p-4 space-y-4">
+                  <div>
+                    <h3 className="font-semibold text-gray-800">Manajemen Bilik</h3>
+                    <p className="text-sm text-gray-500">Tambah / hapus bilik untuk monitor pemilihan</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <Label>ID Bilik</Label>
+                      <Input
+                        placeholder="01"
+                        value={newBilik.id}
+                        onChange={(e) => setNewBilik({ ...newBilik, id: e.target.value })}
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Nama Bilik</Label>
+                      <Input
+                        placeholder="Bilik 01"
+                        value={newBilik.name}
+                        onChange={(e) => setNewBilik({ ...newBilik, name: e.target.value })}
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Monitor</Label>
+                      <Input
+                        placeholder="monitor01"
+                        value={newBilik.monitor}
+                        onChange={(e) => setNewBilik({ ...newBilik, monitor: e.target.value })}
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Email</Label>
+                      <Input
+                        placeholder="panitia01@gmail.com"
+                        value={newBilik.email}
+                        onChange={(e) => setNewBilik({ ...newBilik, email: e.target.value })}
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Handphone</Label>
+                      <Input
+                        placeholder="HpPanitia01"
+                        value={newBilik.handphone}
+                        onChange={(e) => setNewBilik({ ...newBilik, handphone: e.target.value })}
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <Button onClick={handleAddBilik} className="w-full bg-green-600 hover:bg-green-700">
+                        Simpan Bilik
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>ID</TableHead>
+                          <TableHead>Nama</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Aksi</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {bilikList.map((b) => (
+                          <TableRow key={b.id}>
+                            <TableCell className="font-semibold">{b.id}</TableCell>
+                            <TableCell>{b.name || `Bilik ${b.id}`}</TableCell>
+                            <TableCell className="capitalize">{b.status || "idle"}</TableCell>
+                            <TableCell className="text-right">
+                              <Button variant="destructive" size="icon" onClick={() => handleDeleteBilik(b.id)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        {!bilikList.length && (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center text-sm text-gray-500 py-4">
+                              Belum ada bilik terdaftar
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -762,13 +1106,39 @@ export default function AdminDashboard() {
 
             <Card className="md:col-span-2">
               <CardHeader>
-                <CardTitle>Data Siswa ({siswaList.length})</CardTitle>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <CardTitle>Data Siswa ({siswaList.length})</CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="Cari nama / NIS"
+                      value={siswaSearch}
+                      onChange={(e) => setSiswaSearch(e.target.value)}
+                      className="w-48"
+                    />
+                    <Button
+                      variant="destructive"
+                      disabled={!selectedSiswaIds.length}
+                      onClick={handleBulkDeleteSiswa}
+                      className="disabled:opacity-60"
+                    >
+                      Hapus ({selectedSiswaIds.length})
+                    </Button>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="rounded-md border h-[500px] overflow-y-auto">
-                  <Table>
+                <div className="rounded-md border h-[500px] overflow-y-auto overflow-x-auto">
+                  <Table className="min-w-[720px]">
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-12">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={selectedSiswaIds.length === siswaList.length && siswaList.length > 0}
+                            onChange={handleToggleSelectAllSiswa}
+                          />
+                        </TableHead>
                         <TableHead>NIS</TableHead>
                         <TableHead>Nama</TableHead>
                         <TableHead>Kelas</TableHead>
@@ -777,8 +1147,25 @@ export default function AdminDashboard() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {siswaList.map((s) => (
+                      {siswaList
+                        .filter((s) => {
+                          if (!siswaSearch.trim()) return true
+                          const q = siswaSearch.toLowerCase()
+                          return (
+                            String(s.NIS || "").toLowerCase().includes(q) ||
+                            String(s.NamaSiswa || "").toLowerCase().includes(q)
+                          )
+                        })
+                        .map((s) => (
                         <TableRow key={s.id}>
+                          <TableCell>
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4"
+                              checked={selectedSiswaIds.includes(s.id)}
+                              onChange={() => handleToggleSelectSiswa(s.id)}
+                            />
+                          </TableCell>
                           <TableCell className="font-mono">{s.NIS}</TableCell>
                           <TableCell>{s.NamaSiswa}</TableCell>
                           <TableCell>
@@ -1074,7 +1461,7 @@ export default function AdminDashboard() {
             </Card>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card>
               <CardHeader>
                 <CardTitle>Label Statistik</CardTitle>
@@ -1180,8 +1567,102 @@ export default function AdminDashboard() {
             <Input
               value={landingContent.chartYAxisLabel}
               onChange={(e) => setLandingContent({ ...landingContent, chartYAxisLabel: e.target.value })}
-              placeholder="Jumlah Suara"
+                placeholder="Jumlah Suara"
                 />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Style Badge Calon</CardTitle>
+                <CardDescription>Atur chip nomor urut di kartu calon</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Input
+                  value={landingContent.candidateBadgePrefix}
+                  onChange={(e) => setLandingContent({ ...landingContent, candidateBadgePrefix: e.target.value })}
+                  placeholder="Prefix nomor calon (mis. Calon)"
+                />
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="space-y-1">
+                    <Label>Warna Badge</Label>
+                    <Input
+                      type="color"
+                      value={landingContent.candidateBadgeBgColor}
+                      onChange={(e) => setLandingContent({ ...landingContent, candidateBadgeBgColor: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Warna Teks</Label>
+                    <Input
+                      type="color"
+                      value={landingContent.candidateBadgeTextColor}
+                      onChange={(e) => setLandingContent({ ...landingContent, candidateBadgeTextColor: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Ukuran (rem)</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={landingContent.candidateBadgeFontSize}
+                      onChange={(e) =>
+                        setLandingContent({ ...landingContent, candidateBadgeFontSize: e.target.value })
+                      }
+                      placeholder="1.1"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="space-y-1">
+                    <Label>Bentuk Badge</Label>
+                    <Select
+                      value={landingContent.candidateBadgeShape}
+                      onValueChange={(val) => setLandingContent({ ...landingContent, candidateBadgeShape: val })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pilih bentuk" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="rounded">Rounded</SelectItem>
+                        <SelectItem value="square">Square</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Transformasi Teks</Label>
+                    <Select
+                      value={landingContent.candidateBadgeTextTransform}
+                      onValueChange={(val) => setLandingContent({ ...landingContent, candidateBadgeTextTransform: val })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pilih transform" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Normal</SelectItem>
+                        <SelectItem value="uppercase">Uppercase</SelectItem>
+                        <SelectItem value="capitalize">Capitalize</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Shadow Badge</Label>
+                    <Select
+                      value={landingContent.candidateBadgeShadow ? "on" : "off"}
+                      onValueChange={(val) =>
+                        setLandingContent({ ...landingContent, candidateBadgeShadow: val === "on" })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Aktifkan shadow" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="on">On</SelectItem>
+                        <SelectItem value="off">Off</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -1273,6 +1754,28 @@ export default function AdminDashboard() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={confirmState.open} onOpenChange={(open) => !open && closeConfirm()}>
+        <DialogContent showCloseButton={!confirmLoading} className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{confirmState.title || "Konfirmasi"}</DialogTitle>
+            {confirmState.description && <DialogDescription>{confirmState.description}</DialogDescription>}
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={closeConfirm} disabled={confirmLoading}>
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmAction}
+              disabled={confirmLoading}
+              className="min-w-[96px]"
+            >
+              {confirmLoading ? "Memproses..." : "Ya, Hapus"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!viewQrSiswa} onOpenChange={(open) => !open && setViewQrSiswa(null)}>
         <DialogContent className="sm:max-w-md">

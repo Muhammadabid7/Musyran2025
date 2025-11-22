@@ -53,6 +53,13 @@ export default function LandingPage() {
     candidateSubtitle: "Calon Kandidat Formatur",
     candidateSubtitleColor: "#6b7280",
     candidateSubtitleSize: "0.9",
+    candidateBadgePrefix: "Calon",
+    candidateBadgeBgColor: "#16a34a",
+    candidateBadgeTextColor: "#ffffff",
+    candidateBadgeFontSize: "1.1",
+    candidateBadgeShape: "rounded",
+    candidateBadgeTextTransform: "none",
+    candidateBadgeShadow: true,
     chartTitle: "Perolehan Suara Sementara",
     chartTitleColor: "#1f2937",
     chartTitleSize: "1.5",
@@ -114,13 +121,17 @@ export default function LandingPage() {
       }
     })
 
-    // Listen to Total Stats
-    const unsubSudah = onSnapshot(doc(db, "TotalSudahVoting", "Total"), (doc) => {
-      setTotalSudah(doc.data()?.TotalSudahVoting || 0)
-    })
-
-    const unsubBelum = onSnapshot(doc(db, "TotalBelumVoting", "Total"), (doc) => {
-      setTotalBelum(doc.data()?.TotalBelumVoting || 0)
+    // Hitung langsung dari collection Data_Siswa agar total tidak meleset
+    const unsubSiswa = onSnapshot(collection(db, "Data_Siswa"), (snap) => {
+      let sudah = 0
+      let belum = 0
+      snap.forEach((d) => {
+        const status = (d.data()?.StatusVoting || "").toLowerCase()
+        if (status === "sudah") sudah++
+        else belum++
+      })
+      setTotalSudah(sudah)
+      setTotalBelum(belum)
     })
 
     setLoading(false)
@@ -131,8 +142,7 @@ export default function LandingPage() {
       unsubStatusUtama()
       unsubStatusWinner()
       unsubJabatan()
-      unsubSudah()
-      unsubBelum()
+      unsubSiswa()
     }
   }, [])
 
@@ -144,7 +154,7 @@ export default function LandingPage() {
   }, [])
 
   const chartData = candidates.map((c) => ({
-    name: `Calon ${c.id}`,
+    name: `${landingContent.candidateBadgePrefix || "Calon"} ${c.id}`,
     fullName: c.NamaCalonFormatur,
     votes: c.JumlahVote || 0,
   }))
@@ -317,8 +327,20 @@ export default function LandingPage() {
                 ) : (
                   <div className="flex items-center justify-center h-full text-gray-400">No Image</div>
                 )}
-                <div className="absolute top-0 left-0 bg-green-600 text-white px-4 py-2 rounded-br-xl font-bold text-xl shadow-lg z-10">
-                  {candidate.id}
+                <div
+                  className={`absolute top-0 left-0 px-4 py-2 font-bold z-10 ${landingContent.candidateBadgeShadow === false ? "" : "shadow-lg"}`}
+                  style={{
+                    backgroundColor: landingContent.candidateBadgeBgColor || "#16a34a",
+                    color: landingContent.candidateBadgeTextColor || "#ffffff",
+                    fontSize: `${Number(landingContent.candidateBadgeFontSize) || 0}rem`,
+                    borderRadius:
+                      landingContent.candidateBadgeShape === "square"
+                        ? "0"
+                        : "0 0 0.75rem 0",
+                    textTransform: landingContent.candidateBadgeTextTransform || "none",
+                  }}
+                >
+                  {(landingContent.candidateBadgePrefix || "Calon") + " " + candidate.id}
                 </div>
               </div>
               <CardContent className="p-4 text-center bg-white relative z-20">
@@ -415,14 +437,7 @@ export default function LandingPage() {
           {landingContent.loginLinkText}
         </Link>
       </div>
-        </>
-      )}
-
-      {showLanding && (
-        <footer className="text-center text-xs text-gray-500 space-y-1 pb-6">
-          <div>{landingContent.footerMadeBy}</div>
-          <div>{landingContent.footerCopyright}</div>
-        </footer>
+      </>
       )}
     </div>
   )

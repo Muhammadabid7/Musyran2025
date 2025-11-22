@@ -112,7 +112,29 @@ export default function PanitiaDashboard() {
     }
   }, [isScanning])
 
+  const getMedia = async () => {
+    if (typeof navigator === "undefined") throw new Error("Navigator tidak tersedia")
+    if (navigator.mediaDevices?.getUserMedia) {
+      return navigator.mediaDevices.getUserMedia({ video: true })
+    }
+    // Fallback untuk browser lama (Safari lama)
+    // @ts-ignore
+    const legacy = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia
+    if (legacy) {
+      return new Promise<MediaStream>((resolve, reject) => {
+        legacy.call(navigator, { video: true }, resolve, reject)
+      })
+    }
+    throw new Error("getUserMedia tidak didukung")
+  }
+
   const startScanner = () => {
+    if (cameraPermission === false) {
+      setStatus("error")
+      setMessage("Akses kamera ditolak. Izinkan kamera untuk mulai scan.")
+      checkCameraPermission()
+      return
+    }
     if (isScanning) return
     setIsScanning(true)
   }
@@ -132,12 +154,18 @@ export default function PanitiaDashboard() {
 
   const checkCameraPermission = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+      const stream = await getMedia()
       setCameraPermission(true)
       stream.getTracks().forEach((track) => track.stop())
     } catch (err) {
       console.error("Camera permission denied:", err)
       setCameraPermission(false)
+      setStatus("error")
+      setMessage(
+        typeof window !== "undefined" && window.location.protocol !== "https:"
+          ? "Kamera tidak tersedia atau ditolak. Pastikan akses lewat HTTPS dan izinkan kamera."
+          : "Kamera tidak tersedia atau ditolak. Coba izinkan kamera di browser.",
+      )
     }
   }
 
