@@ -25,11 +25,6 @@ const ROLE_OPTIONS = [
   { key: "ketuaASBO", label: "Ketua Bidang ASBO" },
 ]
 
-const labelToKey = (label: string) => {
-  const found = ROLE_OPTIONS.find((r) => r.label.toLowerCase() === label.toLowerCase())
-  return found?.key
-}
-
 export default function LandingPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [totalSudah, setTotalSudah] = useState(0)
@@ -80,7 +75,24 @@ export default function LandingPage() {
     ketuaKDI: "",
     ketuaASBO: "",
   })
+  const [roleLabels, setRoleLabels] = useState<Record<string, string>>(
+    ROLE_OPTIONS.reduce((acc, curr) => ({ ...acc, [curr.key]: curr.label }), {}),
+  )
   const hasCountedView = useRef(false)
+  const roleLabelsRef = useRef(roleLabels)
+
+  useEffect(() => {
+    roleLabelsRef.current = roleLabels
+  }, [roleLabels])
+
+  const labelToKey = (label: string) => {
+    if (!label) return undefined
+    const normalized = label.trim().toLowerCase()
+    const custom = Object.entries(roleLabelsRef.current).find(([, val]) => val?.trim().toLowerCase() === normalized)
+    if (custom) return custom[0]
+    const fallback = ROLE_OPTIONS.find((r) => r.label.toLowerCase() === normalized)
+    return fallback?.key
+  }
 
   useEffect(() => {
     const unsubCandidates = onSnapshot(collection(db, "Data_Calon_Formatur"), (snapshot) => {
@@ -104,9 +116,10 @@ export default function LandingPage() {
     })
     const unsubStatusWinner = onSnapshot(doc(db, "LandingPage", "FormaturTerpilih"), (snap) => {
       if (snap.exists()) {
-        setLandingStatus((prev) => ({ ...prev, winner: snap.data()?.Status === "true" }))
-        const roles = snap.data()?.Roles
-        if (roles) setRolesMap((prev) => ({ ...prev, ...roles }))
+        const data = snap.data()
+        setLandingStatus((prev) => ({ ...prev, winner: data?.Status === "true" }))
+        if (data?.Roles) setRolesMap((prev) => ({ ...prev, ...data.Roles }))
+        if (data?.RoleLabels) setRoleLabels((prev) => ({ ...prev, ...data.RoleLabels }))
       }
     })
 
@@ -179,7 +192,10 @@ export default function LandingPage() {
   }
 
   const candidateById = (id: string) => candidates.find((c) => c.id === id)
-  const roleList = ROLE_OPTIONS
+  const roleList = ROLE_OPTIONS.map((role) => ({
+    ...role,
+    label: roleLabels[role.key] || role.label,
+  }))
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-1000 px-4 sm:px-6 lg:px-10 max-w-6xl mx-auto">
